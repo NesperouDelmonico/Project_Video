@@ -247,7 +247,8 @@ private fun ActionsCard(actions: DiagnosticsActions) {
             Text(
                 "Abre la cámara unos segundos, sin grabar, y comprueba qué ajustes manuales aplica realmente " +
                     "(ISO, obturación, enfoque, balance de blancos) y cuántos FPS entrega en 4K y 1080p. " +
-                    "Apunta a una escena con luz normal y sin moverla.",
+                    "Apunta a una escena con luz normal y sin moverla. Solo se piden combinaciones que Camera2 declara; " +
+                    "si la cámara reporta un error grave, la prueba se detiene y habrá que reiniciar el teléfono.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

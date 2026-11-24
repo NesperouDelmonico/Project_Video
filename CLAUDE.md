@@ -8,6 +8,8 @@ App Android tipo cámara de acción (GoPro/Insta360). Idioma del proyecto: espa�
 - Cada commit debe dejar el proyecto compilando: GitHub Actions genera un APK por commit.
 - Nunca commitear claves (Fish Audio, keystore). Van en GitHub Secrets.
 - La UI de cámara se construye a partir de las capacidades reportadas por `CameraCharacteristics`; no asumir soporte por modelo.
+- **Nunca pedir al HAL combinaciones no declaradas** (tamaño × FPS por encima de `getOutputMinFrameDuration`, rangos fuera de `aeAvailableTargetFpsRanges`). En el A36, pedir 4K a 30 fps coincidió con `ERROR_CAMERA_DEVICE` y dejó la cámara inutilizable para todo el sistema hasta reiniciar.
+- Ante `ERROR_CAMERA_DEVICE` o `ERROR_CAMERA_SERVICE`, cerrar la cámara y no reintentar en bucle: avisar al usuario.
 
 ## Dispositivo de referencia
 Samsung Galaxy A36 (Snapdragon 6 Gen 3).

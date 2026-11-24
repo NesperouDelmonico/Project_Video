@@ -20,6 +20,7 @@ import android.media.ImageReader
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.media.MediaRecorder
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Range
@@ -57,6 +58,14 @@ class ManualControlProbe(context: Context) {
     private val lastLuma = AtomicReference<Double?>(null)
     private val deviceErrors = Collections.synchronizedList(mutableListOf<String>())
 
+    /**
+     * Se activa con ERROR_CAMERA_DEVICE / ERROR_CAMERA_SERVICE. A partir de ahí no se vuelve a
+     * abrir ninguna cámara: insistir sobre un HAL en error grave puede dejar la cámara inutilizable
+     * para todo el sistema hasta reiniciar el teléfono.
+     */
+    @Volatile
+    private var fatalError = false
+
     private lateinit var handler: Handler
     private lateinit var executor: Executor
 
@@ -89,6 +98,11 @@ class ManualControlProbe(context: Context) {
             }
             for (case in fpsCases) {
                 val label = "${case.cameraLabel} · ${case.size.width}×${case.size.height} pidiendo ${case.fps} fps"
+                val notDeclared = undeclaredReason(case)
+                if (notDeclared != null) {
+                    rows += InfoRow(label, "no se prueba: $notDeclared", Support.NO)
+                    continue
+                }
                 withCamera(rows, case.cameraId, label) { device, _ ->
                     listOf(probeFrameRate(device, label, case.size, case.fps))
                 }
@@ -96,6 +110,13 @@ class ManualControlProbe(context: Context) {
 
             if (deviceErrors.isNotEmpty()) {
                 rows += InfoRow("Errores reportados por la cámara", deviceErrors.joinToString("; "), Support.PARTIAL)
+            }
+            if (fatalError) {
+                rows += InfoRow(
+                    "Acción necesaria",
+                    "La cámara entró en error grave y la prueba se detuvo. Fuerza la detención de la app y reinicia el teléfono.",
+                    Support.NO,
+                )
             }
         } catch (e: CancellationException) {
             throw e
@@ -105,6 +126,30 @@ class ManualControlProbe(context: Context) {
             thread.quitSafely()
         }
         return InfoSection("Prueba activa", rows)
+    }
+
+    /**
+     * Devuelve por qué no se debe pedir esta combinación, o null si Camera2 la declara.
+     * Regla del proyecto: nunca pedir tamaño/FPS que el HAL no declare. En el A36, pedir 4K a
+     * 30 fps (declarado solo hasta 24) coincidió con ERROR_CAMERA_DEVICE y la cámara quedó
+     * inutilizable para todo el sistema hasta reiniciar.
+     */
+    private fun undeclaredReason(case: FpsCase): String? {
+        val chars = runCatching { manager.getCameraCharacteristics(case.cameraId) }.getOrNull()
+            ?: return "no se pudieron leer las características"
+        val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            ?: return "sin mapa de streams"
+        val sizes = map.getOutputSizes(MediaRecorder::class.java).orEmpty()
+        if (sizes.none { it == case.size }) return "resolución no declarada para video"
+        val maxFps = Labels.fpsFromFrameDuration(map.getOutputMinFrameDuration(MediaRecorder::class.java, case.size))
+        if (maxFps < case.fps - 0.5) {
+            return "Camera2 declara máximo ${Labels.fps(maxFps)} en esa resolución (pedirlo puede bloquear la cámara)"
+        }
+        val ranges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES).orEmpty()
+        if (ranges.none { it.lower == case.fps && it.upper == case.fps }) {
+            return "el rango [${case.fps}, ${case.fps}] no está declarado"
+        }
+        return null
     }
 
     /** Trasera distinta de la principal y con focal más corta: la ultra gran angular. */
@@ -134,6 +179,14 @@ class ManualControlProbe(context: Context) {
         label: String,
         block: suspend (CameraDevice, CameraCharacteristics) -> List<InfoRow>,
     ) {
+        if (fatalError) {
+            rows += InfoRow(
+                label,
+                "omitida: la cámara reportó un error grave. Reinicia el teléfono antes de volver a probar.",
+                Support.UNKNOWN,
+            )
+            return
+        }
         var device: CameraDevice? = null
         val errorsBefore = deviceErrors.size
         try {
@@ -418,6 +471,11 @@ class ManualControlProbe(context: Context) {
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
+                    if (error == CameraDevice.StateCallback.ERROR_CAMERA_DEVICE ||
+                        error == CameraDevice.StateCallback.ERROR_CAMERA_SERVICE
+                    ) {
+                        fatalError = true
+                    }
                     deviceErrors += "cámara $id: ${deviceErrorName(error)}"
                     camera.close()
                     if (cont.isActive) cont.resumeWithException(IllegalStateException(deviceErrorName(error)))

@@ -8,7 +8,7 @@
 |---|---|
 | ✅ **Controles manuales reales** | ISO, obturación, enfoque y balance de blancos manuales **funcionan** en la cámara principal, aunque Camera2 no declare `MANUAL_SENSOR`. |
 | ✅ **Ultra gran angular disponible** | La cámara `2` (≈96° horizontales) es accesible para terceros. Es el lente natural de una cámara de acción. |
-| ⚠️ **Video limitado** | 1080p hasta 30 fps; 4K declarado solo hasta 24 fps. Sin 60 fps. Cámara lenta 720p a 120/240 fps. |
+| ⚠️ **Video limitado** | 1080p hasta 30 fps; 4K solo hasta 24 fps (pedir 30 bloqueó la cámara, ver incidente). Sin 60 fps. Cámara lenta 720p a 120/240 fps. |
 | ❌ **Sin estabilización expuesta** | Ni EIS ni OIS para terceros. La estabilización es trabajo propio. |
 | ✅ **Encoders sobrados** | HEVC y H.264 por hardware hasta 100 Mbps, 4K30 y 1080p60: el límite está en la cámara, no en el encoder. |
 
@@ -32,9 +32,24 @@ La macro de 5 MP no está disponible para terceros. Todas las cámaras son nivel
 | Exposición manual B (~2,1× más luz) | ISO 100 · 1/60 s | ISO 100 · 1/60 s · brillo 16 (2,3×) | ✅ El brillo real sigue a la exposición |
 | Enfoque manual | 0,0 D (infinito) / 5,0 D (20 cm) | 0,13 D / 5,00 D | ✅ |
 | Balance de blancos por ganancias | R 2,2 · B 1,4 | R 2,20 · B 1,40 · AWB OFF | ✅ |
-| FPS con 4K | — | La prueba v1 falló: usaba un `ImageReader` en vez del encoder | Repetir con la prueba v2 |
+| FPS con 4K | 4K a 30 fps (no declarado) | Tiempo agotado + `ERROR_CAMERA_DEVICE` | ❌ Ver incidente |
 
-La prueba v2 (nightly #4 en adelante) mide los FPS alimentando un **encoder HEVC de hardware real**, el mismo camino que usará la grabación. Cubre 4K30, 4K24 y 1080p30 en la principal y 1080p30 en la gran angular, y repite los controles manuales en la gran angular.
+La gran angular (cámara `2`) también confirmó ISO, obturación y balance de blancos manuales (ISO 400 · 1/500 s y ISO 100 · 1/60 s exactos; ganancias R 2,20 · B 1,40).
+
+### Incidente: cámara bloqueada para todo el sistema (2026-11-23)
+
+1. **Prueba v1 (nightly #3):** después de los controles manuales, que funcionaron, se pidió **4K a 30 fps**. Camera2 solo declara 24 fps en esa resolución. La sesión no entregó frames (tiempo agotado) y la cámara quedó en error.
+2. **Prueba v2 (nightly #4):** la cámara principal devolvió `ERROR_CAMERA_DEVICE` desde la primera prueba, incluso con los controles manuales que antes funcionaban. Su HAL seguía roto. La gran angular funcionó al principio y luego también falló.
+3. **Resultado:** la app de cámara de Samsung tampoco pudo abrir la cámara. Se recupera con **forzar detención + reiniciar el teléfono**.
+
+**Causa probable:** pedir una combinación tamaño × FPS que el HAL no declara. Un HAL LIMITED de Samsung no la recorta a lo soportado: entra en error grave y no se recupera solo.
+
+**Medidas (nightly #5):**
+- La prueba **solo pide combinaciones declaradas** (tamaño en `MediaRecorder`, FPS ≤ el que declara `getOutputMinFrameDuration` y rango presente en `aeAvailableTargetFpsRanges`). 4K a 30 fps ya no se prueba.
+- Al primer `ERROR_CAMERA_DEVICE` / `ERROR_CAMERA_SERVICE` **la prueba se detiene** y pide reiniciar, en vez de seguir abriendo cámaras.
+- Regla agregada a `CLAUDE.md` para todo el código de cámara futuro.
+
+**Conclusión práctica:** 4K a 30 fps no está disponible para terceros en el A36. El perfil 4K es **4K24**.
 
 ## Lo que Camera2 declara
 
