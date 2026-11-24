@@ -21,11 +21,15 @@ App Android que convierte el celular en una **cámara de acción** tipo GoPro / 
 - **Dispositivo:** modelo, SoC, versión de Android, estado térmico y espacio libre (con aviso si no alcanza para el modo bucle).
 - **Cada cámara**, lógica y física: sensor, focales, aperturas, rangos de ISO y obturación, modos AE/AWB/AF, estabilización, resoluciones con sus FPS máximos, alta velocidad, zoom y perfiles HDR. Incluye todas las claves crudas de `CameraCharacteristics`.
 - **Encoders** H.264 / HEVC / AV1 / AAC: si son de hardware, resolución y bitrate máximos, y soporte de 4K30, 4K60 y 1080p60.
-- Botones **Copiar** y **Compartir** para exportar el reporte completo en texto.
+- **Prueba activa:** abre la cámara unos segundos sin grabar y verifica qué ajustes manuales aplica realmente el hardware, aunque no anuncie `MANUAL_SENSOR`. Compara lo pedido con lo que reporta `CaptureResult` y con el brillo real de la imagen, y mide los FPS reales en 4K y 1080p.
+- **Exportar:** *Compartir* envía el reporte como archivo adjunto, *Guardar* lo deja en `Descargas/ProjectVideo/` y *Copiar* lo pone en el portapapeles.
+
+Resultados del dispositivo de referencia en [`docs/dispositivos/galaxy-a36.md`](docs/dispositivos/galaxy-a36.md): Camera2 LIMITED, video 1080p30 / 4K24 / 720p240 y sin estabilización expuesta.
 
 ## Funcionalidades planeadas
 
 ### Esenciales
+- **Estabilización propia:** el A36 no expone EIS ni OIS a terceros. Primero se guardará un registro del giroscopio (`.gcsv`) junto a cada video para estabilizarlo en [Gyroflow]; después vendrá un EIS en tiempo real por GPU.
 - **Controles de video:** resolución, FPS, códec (H.264/HEVC), bitrate, ISO, obturación, compensación de exposición, balance de blancos, enfoque, estabilización y zoom. Solo se muestran los controles que el hardware soporta (según el diagnóstico).
 - La apertura se muestra como dato informativo: en los celulares es fija.
 
@@ -52,12 +56,15 @@ app/src/main/java/com/nesperoudelmonico/projectvideo/
 ├── diagnostics/
 │   ├── CameraDiagnostics.kt   # Lee Camera2 y MediaCodec y arma el reporte
 │   ├── DiagnosticsScreen.kt   # UI Compose del diagnóstico
+│   ├── ManualControlProbe.kt  # Prueba activa: aplica ajustes manuales y verifica el resultado
+│   ├── ReportStorage.kt       # Guarda el reporte en Descargas
 │   ├── Labels.kt              # Traducción de constantes a texto (con tests)
 │   ├── Model.kt
 │   └── ReportFormatter.kt     # Exportación a texto Markdown (con tests)
 └── ui/theme/Theme.kt
 docs/
 ├── viabilidad.md              # Análisis técnico y decisiones
+├── dispositivos/galaxy-a36.md # Resultados del diagnóstico en el equipo de referencia
 └── ci.md                      # Workflow, firma del APK, compilación local
 ```
 
@@ -74,11 +81,14 @@ Requiere JDK 17+ y Android SDK (Android Studio).
 
 - [x] Exploración de viabilidad
 - [x] **Fase 0:** proyecto base + GitHub Actions (APK por commit) + diagnóstico Camera2
-- [ ] **Fase 1:** preview, grabación y panel de controles según capacidades
+- [ ] **Fase 1:** preview, grabación, panel de controles según capacidades y registro de giroscopio para Gyroflow
 - [ ] **Fase 2:** modo bucle (ventana 5 / 10 / 15 min)
 - [ ] **Fase 3:** comandos de voz (Vosk)
 - [ ] **Fase 4:** feedback por voz con Fish Audio
+- [ ] **Fase 5:** estabilización en tiempo real (EIS por GPU)
 
 ## Dispositivo de pruebas
 
 Samsung Galaxy A36 (Snapdragon 6 Gen 3, Android 15+).
+
+[Gyroflow]: https://gyroflow.xyz

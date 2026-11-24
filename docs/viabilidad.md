@@ -7,10 +7,17 @@
 
 - **Stack:** Kotlin + Jetpack Compose + Camera2 (opción A del §1).
 - **Apertura:** fija según el hardware; se muestra como dato informativo.
-- **ISO / obturación:** se habilitan solo si el diagnóstico (Fase 0) confirma `MANUAL_SENSOR`.
+- **ISO / obturación:** se habilitan solo si el diagnóstico (Fase 0) confirma `MANUAL_SENSOR` o si la prueba activa demuestra que el HAL los aplica.
 - **Modo bucle:** ventana deslizante configurable de 5 / 10 / 15 min (§3).
 - **Reconocimiento de voz:** Vosk offline.
 - **Voz de respuesta:** frases pre-generadas con Fish Audio en CI.
+
+## Resultados en el dispositivo de referencia
+
+El diagnóstico del Galaxy A36 confirmó las restricciones esperadas y agregó una importante. Detalle en [`docs/dispositivos/galaxy-a36.md`](dispositivos/galaxy-a36.md).
+- Camera2 **LIMITED**, sin `MANUAL_SENSOR`, pero con AE/AF/AWB en OFF anunciados: falta la prueba activa.
+- Video para terceros: **1080p30 y 4K24**, sin 60 fps. Cámara lenta 720p a 120/240 fps.
+- **Sin EIS ni OIS para terceros:** la estabilización pasa a ser trabajo propio (registro de giroscopio para Gyroflow y, más adelante, EIS por GPU).
 
 ## Veredicto
 
@@ -144,6 +151,7 @@ Costo: un pack de unas 200 frases es del orden de kilobytes de texto, así que c
 
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
+| **Sin estabilización del fabricante** (A36: EIS y OIS no expuestos) | Video tembloroso, justo el caso de uso de una action cam | Registro de giroscopio para Gyroflow (Fase 1) y EIS propio por GPU (Fase 5). |
 | **Sobrecalentamiento** en grabaciones largas (sobre todo 4K) | El sistema puede bajar FPS o cerrar la cámara | Escuchar `PowerManager.addThermalStatusListener`, bajar a 1080p automáticamente y avisar por voz. Bucle en 1080p por defecto. |
 | **Restricciones de foreground service** (Android 14+) | Un servicio `camera`/`microphone` no puede arrancar con la app en segundo plano | El servicio se inicia siempre desde la UI visible. Luego se puede apagar la pantalla. |
 | **Consumo de batería** | Grabación + reconocimiento continuo | Indicador en HUD, aviso por voz en umbrales, modo "solo voz" con preview apagado. |
@@ -163,10 +171,11 @@ Costo: un pack de unas 200 frases es del orden de kilobytes de texto, así que c
 | Fase | Entregable | Valida |
 |---|---|---|
 | **0 — Sondeo + CI** (implementada) | Proyecto base, workflow de APK y una pantalla de **diagnóstico Camera2** que liste el nivel de hardware, las capacidades (`MANUAL_SENSOR`, etc.), los rangos de ISO y obturación, las resoluciones y FPS, y los códecs. | Qué controles manuales reales tiene el A36. **Decide el alcance del §2.** |
-| 1 — Cámara base | Preview + grabación normal + panel de controles según capacidades | Pipeline Camera2 → MediaCodec → MediaMuxer |
+| 1 — Cámara base | Preview + grabación normal + panel de controles según capacidades + registro de giroscopio `.gcsv` | Pipeline Camera2 → MediaCodec → MediaMuxer |
 | 2 — Bucle | Segmentación, ventana deslizante 5/10/15 min, unión, "guardar momento" | El núcleo diferencial |
 | 3 — Voz | Vosk + gramática de comandos + tee de audio | Precisión en ruido real |
 | 4 — Feedback | Voice pack Fish Audio en CI + reproducción | Experiencia manos libres completa |
+| 5 — Estabilización en vivo | EIS por GPU (OpenGL ES) con giroscopio, entre cámara y encoder | Video estabilizado sin pasar por Gyroflow |
 
 ## Fuentes principales
 

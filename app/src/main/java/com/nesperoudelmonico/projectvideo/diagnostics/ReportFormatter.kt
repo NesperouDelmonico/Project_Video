@@ -8,6 +8,7 @@ object ReportFormatter {
         appendLine("Generado: ${report.generatedAt}")
         appendLine()
         appendSection(report.verdict)
+        report.activeProbe?.let { appendSection(it) }
         appendSection(report.device)
         for (camera in report.cameras) {
             appendLine("## ${camera.title}")

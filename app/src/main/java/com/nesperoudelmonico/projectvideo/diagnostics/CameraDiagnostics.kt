@@ -69,6 +69,7 @@ class CameraDiagnostics(private val context: Context) {
             cameras = cameras,
             encoders = encoders.section,
             notes = notes,
+            mainCameraId = mainBackId,
         )
     }
 

@@ -47,6 +47,22 @@ class ReportFormatterTest {
     }
 
     @Test
+    fun `la prueba activa aparece justo despues del veredicto`() {
+        assertFalse(ReportFormatter.toText(report).contains("Prueba activa"))
+        val probe = InfoSection(
+            "Prueba activa (cámara 0)",
+            listOf(InfoRow("ISO y obturación manuales (AE OFF)", "pedido ISO 400", Support.YES)),
+        )
+        val text = ReportFormatter.toText(report.copy(activeProbe = probe))
+        val verdictAt = text.indexOf("## Veredicto")
+        val probeAt = text.indexOf("## Prueba activa (cámara 0)")
+        val deviceAt = text.indexOf("## Dispositivo")
+        assertTrue(verdictAt in 0 until probeAt)
+        assertTrue(probeAt < deviceAt)
+        assertTrue(text.contains("- ✅ ISO y obturación manuales (AE OFF): pedido ISO 400"))
+    }
+
+    @Test
     fun `las claves crudas se pueden omitir`() {
         assertTrue(ReportFormatter.toText(report).contains("android.lens.facing"))
         assertFalse(ReportFormatter.toText(report, includeRawKeys = false).contains("android.lens.facing"))

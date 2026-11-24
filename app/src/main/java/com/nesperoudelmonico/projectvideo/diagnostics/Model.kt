@@ -28,4 +28,8 @@ data class DiagnosticsReport(
     val cameras: List<CameraReport>,
     val encoders: InfoSection,
     val notes: List<String>,
+    /** Id de la cámara trasera principal, objetivo de la prueba activa. */
+    val mainCameraId: String? = null,
+    /** Resultado de [ManualControlProbe], si el usuario la ejecutó. */
+    val activeProbe: InfoSection? = null,
 )
