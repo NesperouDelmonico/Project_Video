@@ -20,21 +20,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # Sin keystore de release, el APK se firma con el de debug. Cachearlo mantiene la misma
       # firma entre builds para poder actualizar la app sin desinstalarla.
       - name: Keystore de debug estable
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.android/debug.keystore
           key: debug-keystore-v1
@@ -84,7 +84,7 @@ jobs:
           echo "### APK listo: \`$NAME\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Subir APK como artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.apk.outputs.name }}
           path: ${{ steps.apk.outputs.name }}
@@ -92,7 +92,7 @@ jobs:
 
       - name: Subir reportes de tests y lint
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reportes-${{ github.run_number }}
           path: |
