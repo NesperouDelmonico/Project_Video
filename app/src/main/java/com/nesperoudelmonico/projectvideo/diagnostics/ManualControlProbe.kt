@@ -3,6 +3,7 @@ package com.nesperoudelmonico.projectvideo.diagnostics
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.ImageFormat
+import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
@@ -23,6 +24,7 @@ import android.media.MediaFormat
 import android.media.MediaRecorder
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.PowerManager
 import android.util.Range
 import android.util.Size
 import android.view.Surface
@@ -55,16 +57,22 @@ import kotlin.math.abs
 class ManualControlProbe(context: Context) {
 
     private val manager: CameraManager = context.getSystemService(CameraManager::class.java)
+    private val power: PowerManager? = context.getSystemService(PowerManager::class.java)
     private val lastLuma = AtomicReference<Double?>(null)
     private val deviceErrors = Collections.synchronizedList(mutableListOf<String>())
 
     /**
-     * Se activa con ERROR_CAMERA_DEVICE / ERROR_CAMERA_SERVICE. A partir de ahí no se vuelve a
-     * abrir ninguna cámara: insistir sobre un HAL en error grave puede dejar la cámara inutilizable
-     * para todo el sistema hasta reiniciar el teléfono.
+     * Motivo para detener la prueba. Se fija con el primer error de cámara que no sea un fallo
+     * puntual de la prueba (error grave del HAL, cámara deshabilitada, cámara en uso por otro
+     * cliente). A partir de ahí no se vuelve a abrir ninguna cámara: insistir sobre un HAL en
+     * error grave puede dejar la cámara inutilizable para todo el sistema hasta reiniciar.
      */
     @Volatile
-    private var fatalError = false
+    private var stopReason: String? = null
+
+    private fun stop(reason: String) {
+        if (stopReason == null) stopReason = reason
+    }
 
     private lateinit var handler: Handler
     private lateinit var executor: Executor
@@ -79,6 +87,17 @@ class ManualControlProbe(context: Context) {
         executor = Executor { handler.post(it) }
 
         try {
+            val thermal = power?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE
+            if (thermal >= PowerManager.THERMAL_STATUS_MODERATE) {
+                rows += InfoRow(
+                    "Prueba activa",
+                    "No se ejecuta: el teléfono está caliente (${Labels.thermalStatus(thermal)}). " +
+                        "Déjalo enfriar unos minutos y vuelve a intentar.",
+                    Support.UNKNOWN,
+                )
+                return InfoSection("Prueba activa", rows)
+            }
+
             val ultraWideId = findUltraWide(mainCameraId)
 
             withCamera(rows, mainCameraId, "Principal · controles manuales") { device, chars ->
@@ -111,12 +130,8 @@ class ManualControlProbe(context: Context) {
             if (deviceErrors.isNotEmpty()) {
                 rows += InfoRow("Errores reportados por la cámara", deviceErrors.joinToString("; "), Support.PARTIAL)
             }
-            if (fatalError) {
-                rows += InfoRow(
-                    "Acción necesaria",
-                    "La cámara entró en error grave y la prueba se detuvo. Fuerza la detención de la app y reinicia el teléfono.",
-                    Support.NO,
-                )
+            stopReason?.let { reason ->
+                rows += InfoRow("Prueba detenida", reason, Support.NO)
             }
         } catch (e: CancellationException) {
             throw e
@@ -179,12 +194,8 @@ class ManualControlProbe(context: Context) {
         label: String,
         block: suspend (CameraDevice, CameraCharacteristics) -> List<InfoRow>,
     ) {
-        if (fatalError) {
-            rows += InfoRow(
-                label,
-                "omitida: la cámara reportó un error grave. Reinicia el teléfono antes de volver a probar.",
-                Support.UNKNOWN,
-            )
+        stopReason?.let {
+            rows += InfoRow(label, "omitida (prueba detenida, ver abajo)", Support.UNKNOWN)
             return
         }
         var device: CameraDevice? = null
@@ -196,6 +207,9 @@ class ManualControlProbe(context: Context) {
             rows += block(opened, chars)
         } catch (e: SecurityException) {
             rows += InfoRow(label, "falta el permiso de cámara", Support.UNKNOWN)
+        } catch (e: CameraAccessException) {
+            stop(accessStopReason(e.reason))
+            rows += InfoRow(label, "no se pudo abrir: ${e.message}", Support.UNKNOWN)
         } catch (e: TimeoutCancellationException) {
             rows += InfoRow(label, "tiempo agotado esperando a la cámara${lastErrorSince(errorsBefore)}", Support.UNKNOWN)
         } catch (e: CancellationException) {
@@ -465,17 +479,14 @@ class ManualControlProbe(context: Context) {
                 }
 
                 override fun onDisconnected(camera: CameraDevice) {
+                    stop("La cámara $id se desconectó: otra app o servicio la tomó. Ciérralo y vuelve a intentar.")
                     deviceErrors += "cámara $id desconectada"
                     camera.close()
                     if (cont.isActive) cont.resumeWithException(IllegalStateException("cámara desconectada"))
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
-                    if (error == CameraDevice.StateCallback.ERROR_CAMERA_DEVICE ||
-                        error == CameraDevice.StateCallback.ERROR_CAMERA_SERVICE
-                    ) {
-                        fatalError = true
-                    }
+                    stop(deviceStopReason(error))
                     deviceErrors += "cámara $id: ${deviceErrorName(error)}"
                     camera.close()
                     if (cont.isActive) cont.resumeWithException(IllegalStateException(deviceErrorName(error)))
@@ -551,6 +562,25 @@ class ManualControlProbe(context: Context) {
                 }, handler)
             }
         }
+
+    private fun deviceStopReason(error: Int): String = when (error) {
+        CameraDevice.StateCallback.ERROR_CAMERA_DEVICE, CameraDevice.StateCallback.ERROR_CAMERA_SERVICE ->
+            "La cámara entró en error grave (${deviceErrorName(error)}). Fuerza la detención de la app y reinicia el teléfono antes de volver a usar la cámara."
+        CameraDevice.StateCallback.ERROR_CAMERA_DISABLED ->
+            "El sistema deshabilitó la cámara (ERROR_CAMERA_DISABLED): revisa el interruptor de privacidad de cámara, la temperatura o las políticas del equipo."
+        else ->
+            "Otra app o servicio con más prioridad está usando la cámara (${deviceErrorName(error)}). Ciérralo y vuelve a intentar."
+    }
+
+    private fun accessStopReason(reason: Int): String = when (reason) {
+        CameraAccessException.CAMERA_DISABLED ->
+            "El sistema deshabilitó la cámara (CAMERA_DISABLED): revisa el interruptor de privacidad de cámara, la temperatura o las políticas del equipo."
+        CameraAccessException.CAMERA_IN_USE, CameraAccessException.MAX_CAMERAS_IN_USE ->
+            "Otra app o servicio con más prioridad está usando la cámara. Ciérralo y vuelve a intentar."
+        CameraAccessException.CAMERA_ERROR ->
+            "La cámara reportó un error grave. Fuerza la detención de la app y reinicia el teléfono."
+        else -> "No se pudo acceder a la cámara (código $reason)."
+    }
 
     private fun deviceErrorName(error: Int): String = when (error) {
         CameraDevice.StateCallback.ERROR_CAMERA_IN_USE -> "ERROR_CAMERA_IN_USE"

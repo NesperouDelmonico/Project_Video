@@ -46,8 +46,15 @@ La gran angular (cámara `2`) también confirmó ISO, obturación y balance de b
 
 **Medidas (nightly #5):**
 - La prueba **solo pide combinaciones declaradas** (tamaño en `MediaRecorder`, FPS ≤ el que declara `getOutputMinFrameDuration` y rango presente en `aeAvailableTargetFpsRanges`). 4K a 30 fps ya no se prueba.
-- Al primer `ERROR_CAMERA_DEVICE` / `ERROR_CAMERA_SERVICE` **la prueba se detiene** y pide reiniciar, en vez de seguir abriendo cámaras.
+- Al primer `ERROR_CAMERA_DEVICE` / `ERROR_CAMERA_SERVICE` **la prueba se detiene** y pide reiniciar, en vez de seguir abriendo cámaras. Desde la v6 también se detiene con cámara deshabilitada, en uso o desconectada, y no arranca con el teléfono caliente.
 - Regla agregada a `CLAUDE.md` para todo el código de cámara futuro.
+
+**Tras reiniciar (23:27, nightly #4 todavía instalado):** la cámara principal volvió a funcionar y repitió los controles manuales sin errores (ISO 402 · 1/506 s, ISO 100 · 1/60 s, foco 0,13 D / 5,00 D, ganancias R 2,20 · B 1,40). Después:
+- la gran angular devolvió `ERROR_CAMERA_DISABLED` ("disabled by policy");
+- la principal devolvió `CAMERA_IN_USE` ("higher-priority client using camera");
+- el estado térmico había subido a `MODERATE`.
+
+No son errores del HAL como el del incidente: el sistema le quitó la cámara a la app, ya sea por temperatura, por el bloqueo de privacidad de cámara o porque otro cliente con más prioridad la tomó. La prueba v4 siguió insistiendo; la **v6** se detiene con el primer error de este tipo y no arranca si el teléfono está en `MODERATE` o más caliente.
 
 **Conclusión práctica:** 4K a 30 fps no está disponible para terceros en el A36. El perfil 4K es **4K24**.
 
