@@ -7,17 +7,18 @@
 
 - **Stack:** Kotlin + Jetpack Compose + Camera2 (opción A del §1).
 - **Apertura:** fija según el hardware; se muestra como dato informativo.
-- **ISO / obturación:** se habilitan solo si el diagnóstico (Fase 0) confirma `MANUAL_SENSOR` o si la prueba activa demuestra que el HAL los aplica.
+- **ISO / obturación:** se habilitan si Camera2 declara `MANUAL_SENSOR` o si la prueba activa demuestra que el HAL los aplica. En el A36 funcionan.
 - **Modo bucle:** ventana deslizante configurable de 5 / 10 / 15 min (§3).
 - **Reconocimiento de voz:** Vosk offline.
 - **Voz de respuesta:** frases pre-generadas con Fish Audio en CI.
 
 ## Resultados en el dispositivo de referencia
 
-El diagnóstico del Galaxy A36 confirmó las restricciones esperadas y agregó una importante. Detalle en [`docs/dispositivos/galaxy-a36.md`](dispositivos/galaxy-a36.md).
-- Camera2 **LIMITED**, sin `MANUAL_SENSOR`, pero con AE/AF/AWB en OFF anunciados: falta la prueba activa.
-- Video para terceros: **1080p30 y 4K24**, sin 60 fps. Cámara lenta 720p a 120/240 fps.
-- **Sin EIS ni OIS para terceros:** la estabilización pasa a ser trabajo propio (registro de giroscopio para Gyroflow y, más adelante, EIS por GPU).
+Detalle en [`docs/dispositivos/galaxy-a36.md`](dispositivos/galaxy-a36.md).
+- Camera2 **LIMITED** y sin `MANUAL_SENSOR`, pero la **prueba activa confirmó que ISO, obturación, enfoque y balance de blancos manuales funcionan**. El riesgo #2 del veredicto queda resuelto a favor.
+- **La ultra gran angular (≈96° H) es accesible**: será el lente por defecto del modo acción.
+- Video para terceros: **1080p30**, 4K declarado a 24 fps (pendiente de medir con encoder real) y cámara lenta 720p a 120/240 fps. Sin 60 fps.
+- **Sin EIS ni OIS para terceros:** la estabilización es trabajo propio (registro `.gcsv` para Gyroflow y, más adelante, EIS por GPU).
 
 ## Veredicto
 

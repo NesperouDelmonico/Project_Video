@@ -1,52 +1,72 @@
 # Galaxy A36 (SM-A366E) — resultados del diagnóstico
 
-> Diagnóstico Camera2 del 2026-11-23 · Android 16 (API 36) · SoC QTI SM6475 (Snapdragon 6 Gen 3).
-> Cámara analizada: trasera principal, id `0`. El reporte recibido llegó cortado después de las primeras claves crudas, así que faltan las demás cámaras y los encoders. Pendiente: reporte completo y prueba activa.
+> Diagnóstico Camera2 y prueba activa del 2026-11-23 · Android 16 (API 36) · SoC QTI SM6475 (Snapdragon 6 Gen 3).
 
-## Lo que Camera2 expone a apps de terceros
+## Resumen
 
-| Área | Resultado | Comentario |
-|---|---|---|
-| Nivel de hardware | **LIMITED** | Igual que el resto de la gama A de Samsung. |
-| Capacidades | `BACKWARD_COMPATIBLE`, `READ_SENSOR_SETTINGS`, `BURST_CAPTURE`, `CONSTRAINED_HIGH_SPEED_VIDEO` | Faltan `MANUAL_SENSOR`, `MANUAL_POST_PROCESSING` y `RAW`. |
-| Modos AE / AF / AWB | Los tres incluyen **OFF** | Sin `MANUAL_SENSOR` no hay garantía de que funcionen, pero el HAL los anuncia. **La prueba activa lo resuelve.** |
-| Rango ISO / obturación | ISO 35–4491 (analógico hasta 2245) · 1/10773 s – 3,33 s | Solo sirve si la exposición manual funciona de verdad. |
-| Prioridad de exposición | `aeAvailablePriorityModes: 0` | No hay prioridad a obturación ni a ISO. |
-| Compensación EV | −2,0 a +2,0 EV, pasos de 1/10 | ✅ Garantizado. |
-| Bloqueo AE / AWB | Sí / Sí | ✅ |
-| Balance de blancos | 8 presets + OFF · `colorCorrection.availableModes: 0,1,2` | Las ganancias manuales se verifican en la prueba activa. |
-| Enfoque | AF continuo de video, macro, OFF · mínimo 10 cm | Distancia manual por verificar. |
-| Apertura | Fija f/1.8 · focal 4,69 mm · sensor 6,53 × 4,90 mm | El sensor de 50 MP se entrega en 12,5 MP (binning 2×2). |
-| **Video** | **1080p hasta 30 fps · 4K (3840×2160) hasta 24 fps** · rangos AE hasta [30, 30] | Sin 60 fps en ninguna resolución. La app de Samsung graba 4K30 y 1080p60, pero eso no está disponible para terceros. |
-| Alta velocidad | 1280×720 a 120 y 240 fps | Sesión *constrained high speed*: sirve para cámara lenta. |
-| **Estabilización** | **EIS: solo OFF · OIS: solo OFF** | La estabilización de Samsung no está disponible para terceros. |
-| HDR 10-bit | No | |
-| Encoder | HEVC por hardware, 8-bit | |
-| Zoom | 1× – 8× (digital) | La cámara 0 no es lógica: falta ver si la ultra gran angular aparece con otro id. |
-| Almacenamiento | 49,3 GB libres | Alcanza para el bucle de 15 min a 1080p. |
-
-## Consecuencias para el diseño
-
-### 1. Perfiles de video de la v1
-
-| Perfil | Uso |
+| | |
 |---|---|
-| **1080p30 HEVC** (por defecto) | Grabación normal y modo bucle. |
-| 4K24 HEVC | Modo "cine", sin bucle largo por espacio y temperatura. |
-| 720p120 / 720p240 | Cámara lenta. |
+| ✅ **Controles manuales reales** | ISO, obturación, enfoque y balance de blancos manuales **funcionan** en la cámara principal, aunque Camera2 no declare `MANUAL_SENSOR`. |
+| ✅ **Ultra gran angular disponible** | La cámara `2` (≈96° horizontales) es accesible para terceros. Es el lente natural de una cámara de acción. |
+| ⚠️ **Video limitado** | 1080p hasta 30 fps; 4K declarado solo hasta 24 fps. Sin 60 fps. Cámara lenta 720p a 120/240 fps. |
+| ❌ **Sin estabilización expuesta** | Ni EIS ni OIS para terceros. La estabilización es trabajo propio. |
+| ✅ **Encoders sobrados** | HEVC y H.264 por hardware hasta 100 Mbps, 4K30 y 1080p60: el límite está en la cámara, no en el encoder. |
 
-La medición de FPS de la prueba activa confirmará si 4K entrega 24 fps aunque se pidan 30.
+## Cámaras
 
-### 2. Estabilización: hay que hacerla nosotros
+| Id | Lente | Focal | Apertura | Sensor | Campo de visión | Enfoque | Uso previsto |
+|---|---|---|---|---|---|---|---|
+| `0` | Trasera principal | 4,69 mm | f/1.8 | 6,53 × 4,90 mm · 12,5 MP (binning 2×2 de 50 MP) | ≈70° H · 77° diagonal 16:9 | AF + manual (mín. 10 cm) | Calidad, poca luz, 4K24 |
+| `2` | **Trasera ultra gran angular** | 1,64 mm | f/2.2 | 3,66 × 2,74 mm · 8 MP | **≈96° H · 104° diagonal 16:9** | Fijo | **Modo acción por defecto** |
+| `1` | Frontal | 3,3 mm | f/2.2 | 4,48 × 3,36 mm · 12 MP | ≈68° H | Fijo | Vlog / selfie |
+| `3` | Frontal (variante) | 3,3 mm | f/2.2 | 3,67 × 2,76 mm · 12 MP | menor | Fijo | Sin uso previsto |
 
-Una cámara de acción sin estabilización pierde gran parte de su valor, y el A36 no expone EIS ni OIS a terceros. Hay dos caminos, que se complementan:
+La macro de 5 MP no está disponible para terceros. Todas las cámaras son nivel **LIMITED** y su `timestampSource` es `REALTIME`, el mismo reloj que el giroscopio. Por eso sincronizar los datos de movimiento con los frames es directo (ver estabilización).
 
-| Opción | Cómo funciona | Esfuerzo | Cuándo |
+## Prueba activa (cámara principal)
+
+| Prueba | Pedido | Obtenido | Resultado |
 |---|---|---|---|
-| **A. Registro de giroscopio para Gyroflow** | Mientras se graba, se guardan el giroscopio y el acelerómetro con marcas de tiempo alineadas al video, en un archivo `.gcsv` junto al `.mp4`. Gyroflow (gratuito y de código abierto, con versión para Android) estabiliza después, con corrección de *rolling shutter* y nivelado de horizonte. | Bajo | Fase 1, junto con la grabación |
-| **B. EIS en tiempo real por GPU** | Entre la cámara y el encoder se pasa cada frame por OpenGL ES: recorte de ~10–15 % y rotación compensada con el giroscopio. El video sale ya estabilizado. | Alto (y suma calor) | Fase propia, después del modo voz |
+| Referencia automática | — | ISO 479 · 1/30 s · brillo 103 | — |
+| Exposición manual A | ISO 400 · 1/500 s | ISO 402 · 1/506 s · brillo 7 | ✅ |
+| Exposición manual B (~2,1× más luz) | ISO 100 · 1/60 s | ISO 100 · 1/60 s · brillo 16 (2,3×) | ✅ El brillo real sigue a la exposición |
+| Enfoque manual | 0,0 D (infinito) / 5,0 D (20 cm) | 0,13 D / 5,00 D | ✅ |
+| Balance de blancos por ganancias | R 2,2 · B 1,4 | R 2,20 · B 1,40 · AWB OFF | ✅ |
+| FPS con 4K | — | La prueba v1 falló: usaba un `ImageReader` en vez del encoder | Repetir con la prueba v2 |
 
-### 3. Panel de controles (Fase 1)
+La prueba v2 (nightly #4 en adelante) mide los FPS alimentando un **encoder HEVC de hardware real**, el mismo camino que usará la grabación. Cubre 4K30, 4K24 y 1080p30 en la principal y 1080p30 en la gran angular, y repite los controles manuales en la gran angular.
 
-- **Siempre disponibles:** compensación EV, bloqueo AE/AWB, presets de balance de blancos, modo de enfoque (continuo / macro), zoom, perfil de video.
-- **Solo si la prueba activa da ✅:** ISO y obturación manuales, enfoque por distancia y balance de blancos por ganancias o Kelvin.
+## Lo que Camera2 declara
+
+| Área | Principal (`0`) | Gran angular (`2`) |
+|---|---|---|
+| Capacidades | `BACKWARD_COMPATIBLE`, `READ_SENSOR_SETTINGS`, `BURST_CAPTURE`, `CONSTRAINED_HIGH_SPEED_VIDEO` | `BACKWARD_COMPATIBLE`, `READ_SENSOR_SETTINGS`, `BURST_CAPTURE` |
+| ISO | 35 – 4491 (analógico hasta 2245) | 40 – 1280 (analógico hasta 640) |
+| Obturación | 1/10773 s – 3,33 s | 1/19110 s – 1/4 s |
+| Compensación EV | ±2,0 EV, pasos de 0,1 | ±2,0 EV, pasos de 0,1 |
+| Balance de blancos | 8 presets + OFF | 8 presets + OFF |
+| Video (MediaRecorder) | 1080p ≤ 30 fps · 4K ≤ 24 fps | 1080p ≤ 30 fps · máx. 3264×2448 a 24 fps |
+| Alta velocidad | 720p a 120 / 240 fps | No |
+| Estabilización | OFF | OFF |
+| Zoom | 1× – 8× digital | 1× – 8× digital |
+| Prioridad de exposición | No (`aeAvailablePriorityModes: 0`) | No |
+
+Encoders por hardware: `c2.qti.hevc.encoder` y `c2.qti.avc.encoder`, ambos hasta 4096×4096 y 100 Mbps, con 4K30 y 1080p60. AAC solo por software, que basta para audio.
+
+## Decisiones para la Fase 1
+
+### Panel de controles
+
+Como la prueba activa lo confirmó, el panel será de **cámara profesional completa**:
+- **Exposición:** modo Auto / Manual. En manual hay ISO (35–4491) y obturación (1/10000 s hasta 1/fps). En auto hay compensación EV ±2 y bloqueo AE.
+- **Balance de blancos:** Auto, presets y **Kelvin manual**, convertido a ganancias RGGB, más bloqueo AWB.
+- **Enfoque:** continuo, macro y **manual por distancia** (solo en la principal; la gran angular es de foco fijo).
+- **Lente:** gran angular (por defecto) o principal. **Zoom** digital.
+- **Perfil de video:** 1080p30 HEVC (por defecto), 4K24 HEVC (solo principal) y 720p120/240 cámara lenta (solo principal).
+
+Cada control se habilita por cámara según lo que reporten sus características y la prueba activa; nada va escrito a mano para el A36.
+
+### Estabilización
+
+1. **Fase 1 — registro de giroscopio `.gcsv`** junto a cada video, para estabilizar en Gyroflow. Como las marcas de tiempo de la cámara y del giroscopio usan el mismo reloj, la sincronización es exacta. La calibración intrínseca del lente (`lens.intrinsicCalibration`) también está disponible para el perfil de lente.
+2. **Fase 5 — EIS en tiempo real** por GPU. Conviene hacerlo sobre la gran angular: tras recortar un 10–15 % sigue quedando un campo de visión amplio.

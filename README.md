@@ -21,10 +21,10 @@ App Android que convierte el celular en una **cámara de acción** tipo GoPro / 
 - **Dispositivo:** modelo, SoC, versión de Android, estado térmico y espacio libre (con aviso si no alcanza para el modo bucle).
 - **Cada cámara**, lógica y física: sensor, focales, aperturas, rangos de ISO y obturación, modos AE/AWB/AF, estabilización, resoluciones con sus FPS máximos, alta velocidad, zoom y perfiles HDR. Incluye todas las claves crudas de `CameraCharacteristics`.
 - **Encoders** H.264 / HEVC / AV1 / AAC: si son de hardware, resolución y bitrate máximos, y soporte de 4K30, 4K60 y 1080p60.
-- **Prueba activa:** abre la cámara unos segundos sin grabar y verifica qué ajustes manuales aplica realmente el hardware, aunque no anuncie `MANUAL_SENSOR`. Compara lo pedido con lo que reporta `CaptureResult` y con el brillo real de la imagen, y mide los FPS reales en 4K y 1080p.
+- **Prueba activa:** abre la cámara unos segundos sin grabar y verifica qué ajustes manuales aplica realmente el hardware, aunque no anuncie `MANUAL_SENSOR`. Compara lo pedido con lo que reporta `CaptureResult` y con el brillo real de la imagen, y mide los FPS reales alimentando un encoder HEVC de hardware (4K y 1080p, en la cámara principal y en la gran angular).
 - **Exportar:** *Compartir* envía el reporte como archivo adjunto, *Guardar* lo deja en `Descargas/ProjectVideo/` y *Copiar* lo pone en el portapapeles.
 
-Resultados del dispositivo de referencia en [`docs/dispositivos/galaxy-a36.md`](docs/dispositivos/galaxy-a36.md): Camera2 LIMITED, video 1080p30 / 4K24 / 720p240 y sin estabilización expuesta.
+Resultados del dispositivo de referencia en [`docs/dispositivos/galaxy-a36.md`](docs/dispositivos/galaxy-a36.md). Camera2 es LIMITED, pero **ISO, obturación, enfoque y balance de blancos manuales funcionan**. La ultra gran angular (≈96°) está disponible. Video 1080p30, 4K24 y 720p a 240 fps; sin estabilización expuesta.
 
 ## Funcionalidades planeadas
 

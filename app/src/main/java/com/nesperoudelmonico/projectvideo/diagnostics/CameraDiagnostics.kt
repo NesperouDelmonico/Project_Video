@@ -133,19 +133,27 @@ class CameraDiagnostics(private val context: Context) {
         } else {
             InfoRow(
                 "ISO y obturación manuales",
-                "No (sin MANUAL_SENSOR). Usar compensación EV + bloqueos AE/AWB.",
-                Support.NO,
+                "No declarado (sin MANUAL_SENSOR). Puede funcionar igual: ejecuta la prueba activa.",
+                Support.PARTIAL,
             )
         }
 
         rows += InfoRow(
             "Enfoque manual (distancia)",
-            if (minFocus <= 0f) "Lente de foco fijo" else Labels.yesNo(manualSensor),
-            if (manualSensor && minFocus > 0f) Support.YES else Support.NO,
+            when {
+                minFocus <= 0f -> "Lente de foco fijo"
+                manualSensor -> "sí"
+                else -> "No declarado: ejecuta la prueba activa"
+            },
+            when {
+                minFocus <= 0f -> Support.NO
+                manualSensor -> Support.YES
+                else -> Support.PARTIAL
+            },
         )
         rows += InfoRow(
             "Balance de blancos manual",
-            if (manualPost) "Sí (MANUAL_POST_PROCESSING)" else "Solo presets",
+            if (manualPost) "Sí (MANUAL_POST_PROCESSING)" else "Presets garantizados; ganancias manuales: ejecuta la prueba activa",
             if (manualPost) Support.YES else Support.PARTIAL,
         )
         val evAvailable = evRange != null && (evRange.lower != 0 || evRange.upper != 0)
