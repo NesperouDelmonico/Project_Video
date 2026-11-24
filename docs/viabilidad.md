@@ -3,6 +3,15 @@
 > Fecha: 2026-11-23 · Estado: exploración inicial, antes de escribir código.
 > Dispositivo de referencia para pruebas: **Samsung Galaxy A36** (Snapdragon 6 Gen 3, Android 15+, One UI 7).
 
+## Decisiones tomadas (2026-11-23)
+
+- **Stack:** Kotlin + Jetpack Compose + Camera2 (opción A del §1).
+- **Apertura:** fija según el hardware; se muestra como dato informativo.
+- **ISO / obturación:** se habilitan solo si el diagnóstico (Fase 0) confirma `MANUAL_SENSOR`.
+- **Modo bucle:** ventana deslizante configurable de 5 / 10 / 15 min (§3).
+- **Reconocimiento de voz:** Vosk offline.
+- **Voz de respuesta:** frases pre-generadas con Fish Audio en CI.
+
 ## Veredicto
 
 **El proyecto es viable en Android**, con cuatro ajustes respecto a la idea original:
@@ -11,7 +20,7 @@
 |---|---|---|---|
 | 1 | Controlar la **apertura** como en una cámara profesional | Casi todos los celulares tienen apertura **fija** (el A36 principal es f/1.8 fijo). Camera2 solo permite cambiarla si `LENS_INFO_AVAILABLE_APERTURES` lista más de un valor. | Mostrar la apertura como dato de solo lectura. Ofrecer ISO, obturación, compensación de exposición, balance de blancos, enfoque, zoom, FPS, resolución, bitrate y códec. |
 | 2 | ISO y velocidad de obturación manuales | Requieren la capacidad `MANUAL_SENSOR` de Camera2. La gama A de Samsung suele exponer Camera2 en nivel **LIMITED**, y hay quejas de usuarios del A36 por restricciones (sobre todo en ultra gran angular, macro y frontal). | **Verificar en el A36 lo primero** (app de sondeo, Fase 0). La UI se arma según las capacidades que reporte cada cámara: si no hay modo manual, se cae a compensación EV + bloqueos AE/AWB. |
-| 3 | Modo bucle de 10 min | Es viable, pero **no** con `MediaRecorder` ni con el `Recorder` de CameraX: `setNextOutputFile()` corta por tamaño de archivo, no por tiempo, y reiniciar la grabación deja huecos. | Pipeline propio: Camera2 → `MediaCodec` (H.264/HEVC) → `MediaMuxer`, rotando segmentos de ~1 min en keyframes, y uniendo al final sin recodificar. |
+| 3 | Modo bucle de 5/10/15 min | Es viable, pero **no** con `MediaRecorder` ni con el `Recorder` de CameraX: `setNextOutputFile()` corta por tamaño de archivo, no por tiempo, y reiniciar la grabación deja huecos. | Pipeline propio: Camera2 → `MediaCodec` (H.264/HEVC) → `MediaMuxer`, rotando segmentos de 30 s en keyframes, y uniendo al final sin recodificar. |
 | 4 | Comandos de voz con wake word (tipo Porcupine) | **El free tier de Picovoice se cerró el 30 de junio de 2026** y las claves gratuitas dejaron de funcionar. El siguiente plan cuesta miles de USD al año. | **Vosk** offline (Apache 2.0) con el modelo `vosk-model-small-es-0.42` (39 MB) y una gramática cerrada de comandos. |
 
 Fish Audio sirve para la voz de respuesta, pero conviene usarlo **offline primero**: la voz se pre-genera en CI y se empaqueta en el APK (ver §5).
@@ -54,27 +63,33 @@ Todo se consulta en tiempo de ejecución con `CameraCharacteristics`; **nada se 
 
 Las versiones recientes de Android agregaron modos de prioridad de exposición (`CONTROL_AE_PRIORITY_MODE`: prioridad a obturación o a ISO), cercanos a los modos S/Tv de una cámara. Habría que ver si el A36 los expone.
 
-## 3. Modo bucle (últimos 10 minutos)
+## 3. Modo bucle: ventana deslizante de 5 / 10 / 15 minutos
 
-Funciona igual que una dashcam: un buffer circular **en disco**. En RAM no cabe: 10 minutos a 1080p ocupan más de 1 GB.
+**Definición (confirmada):** la cámara graba sin parar. Mientras lo grabado no llega a la duración elegida (5, 10 o 15 min), se conserva todo. Cuando la supera, se sigue grabando y se descarta el **principio**: funciona como una tubería de largo fijo, donde lo que entra por delante empuja y saca lo más viejo por detrás. Al detener, se guarda un único video con exactamente los últimos *N* minutos.
+
+Funciona igual que el bucle de una dashcam: un buffer circular **en disco**. En RAM no cabe: 10 minutos a 1080p ocupan más de 1 GB.
 
 ```
 Camera2 ──► MediaCodec (video) ─┐
 AudioRecord ─► MediaCodec (AAC) ┴─► SegmentMuxer ─► seg_0001.mp4, seg_0002.mp4, …
                                           │
-                                  Mantiene N+1 segmentos de 60 s, borra el más viejo
+                       Ventana = N min (5/10/15). Cuando lo grabado supera N + 1 segmento,
+                       borra el segmento más viejo (la "cola" de la tubería)
                                           │
                      Al detener ─► une los segmentos (remux sin recodificar)
-                                   y recorta a exactamente 10:00 ─► galería (MediaStore)
+                                   y recorta el inicio para dejar exactamente N:00 ─► galería
 ```
 
+La "tubería" se corta por segmentos, no frame a frame. Reescribir un MP4 continuamente para quitarle el principio no es viable en un celular: habría que reescribir gigas de datos en cada corte. Con segmentos, borrar la cola cuesta un `delete()`. El recorte fino al segundo exacto se hace una sola vez, al detener.
+
 Decisiones:
-- **Segmentos de 60 s**, keyframe cada 1–2 s, para poder cortar con precisión al final.
-- Se conservan **11 segmentos** para garantizar 10 min completos aunque el actual esté a medias.
+- **Duración configurable: 5, 10 o 15 min** (y cualquier otro valor después, si se quiere).
+- **Segmentos de 30 s**, con keyframe cada 1 s. Con segmentos más cortos, la tubería avanza a pasos más finos y el disco nunca guarda más de *N* min + 30 s.
+- Se conservan **⌈N / 30 s⌉ + 1 segmentos**: 11 para 5 min, 21 para 10 min y 31 para 15 min.
 - La unión final usa `MediaExtractor` + `MediaMuxer`, sin recodificar: es rápida y no pierde calidad.
 - **"Guardar momento"** (como los clips protegidos de dashcam): un comando marca los segmentos actuales para que no se sobrescriban. Es poco esfuerzo extra y muy útil.
 
-Espacio necesario para el buffer (10 min + 1 segmento extra):
+Espacio necesario para el buffer (ventana de 10 min; para 5 min es la mitad y para 15 min, 1,5 veces):
 
 | Perfil | Bitrate aprox. | Espacio |
 |---|---|---|
@@ -141,15 +156,15 @@ Costo: un pack de unas 200 frases es del orden de kilobytes de texto, así que c
 - El APK se sube como *artifact* del workflow. Además, en `main` se publica en un **pre-release rodante** (`nightly`), para poder descargarlo directo desde el celular sin entrar a la pestaña Actions.
 - **Firma:** el keystore va en GitHub Secrets (base64). Si es el mismo en todos los builds, el APK se actualiza encima de la versión instalada sin desinstalar.
 - El paso del voice pack (§5) entra al workflow cuando exista `voice/frases.yaml`.
-- El workflow concreto depende del stack (Gradle vs Flutter), por eso se crea después de decidir el §1.
+- Implementado en `.github/workflows/android.yml`; detalles y configuración de la firma en [`docs/ci.md`](ci.md).
 
 ## 8. Plan por fases
 
 | Fase | Entregable | Valida |
 |---|---|---|
-| **0 — Sondeo + CI** | Proyecto base, workflow de APK y una pantalla de **diagnóstico Camera2** que liste el nivel de hardware, las capacidades (`MANUAL_SENSOR`, etc.), los rangos de ISO y obturación, las resoluciones y FPS, y los códecs. | Qué controles manuales reales tiene el A36. **Decide el alcance del §2.** |
+| **0 — Sondeo + CI** (implementada) | Proyecto base, workflow de APK y una pantalla de **diagnóstico Camera2** que liste el nivel de hardware, las capacidades (`MANUAL_SENSOR`, etc.), los rangos de ISO y obturación, las resoluciones y FPS, y los códecs. | Qué controles manuales reales tiene el A36. **Decide el alcance del §2.** |
 | 1 — Cámara base | Preview + grabación normal + panel de controles según capacidades | Pipeline Camera2 → MediaCodec → MediaMuxer |
-| 2 — Bucle | Segmentación, buffer circular, unión, "guardar momento" | El núcleo diferencial |
+| 2 — Bucle | Segmentación, ventana deslizante 5/10/15 min, unión, "guardar momento" | El núcleo diferencial |
 | 3 — Voz | Vosk + gramática de comandos + tee de audio | Precisión en ruido real |
 | 4 — Feedback | Voice pack Fish Audio en CI + reproducción | Experiencia manos libres completa |
 
